@@ -255,6 +255,9 @@ class CalendarDelegate : PluginRegistry.RequestPermissionsResultListener {
                 ?: "0xFFFF0000").replace("0x", "#"))) // Red colour as a default
         values.put(CalendarContract.Calendars.OWNER_ACCOUNT, localAccountName)
         values.put(CalendarContract.Calendars.CALENDAR_TIME_ZONE, java.util.Calendar.getInstance().timeZone.id)
+        values.put(CalendarContract.Calendars.SYNC_EVENTS, 1)
+        //values.put(CalendarContract.Calendars.VISIBLE, 1)
+        //values.put(CalendarContract.Calendars.CAN_ORGANIZER_RESPOND, 0)
 
         val result = contentResolver?.insert(uri, values)
         // Get the calendar ID that is the last element in the Uri
