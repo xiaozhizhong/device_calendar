@@ -112,9 +112,9 @@ class CalendarDelegate : PluginRegistry.RequestPermissionsResultListener {
         }
 
         val cachedValues: CalendarMethodsParametersCacheModel = _cachedParametersMap[requestCode]
-          ?: // unlikely scenario where another plugin is potentially using the same request code but it's not one we are tracking so return to
-          // indicate we're not handling the request
-          return false
+                ?: // unlikely scenario where another plugin is potentially using the same request code but it's not one we are tracking so return to
+                // indicate we're not handling the request
+                return false
 
         try {
             if (!permissionGranted) {
@@ -236,34 +236,61 @@ class CalendarDelegate : PluginRegistry.RequestPermissionsResultListener {
         return null
     }
 
-    fun createCalendar(calendarName: String, calendarColor: String?, localAccountName: String, pendingChannelResult: MethodChannel.Result) {
+    fun createCalendar(calendarName: String, calendarColor: String?, localAccountName: String, visible: Boolean = true, pendingChannelResult: MethodChannel.Result) {
         val contentResolver: ContentResolver? = _context?.contentResolver
 
         var uri = CalendarContract.Calendars.CONTENT_URI
         uri = uri.buildUpon()
-          .appendQueryParameter(CALLER_IS_SYNCADAPTER, "true")
-          .appendQueryParameter(CalendarContract.Calendars.ACCOUNT_NAME, localAccountName)
-          .appendQueryParameter(CalendarContract.Calendars.ACCOUNT_TYPE, CalendarContract.ACCOUNT_TYPE_LOCAL)
-          .build()
-        val values = ContentValues()
-        values.put(CalendarContract.Calendars.NAME, calendarName)
-        values.put(CalendarContract.Calendars.CALENDAR_DISPLAY_NAME, calendarName)
-        values.put(CalendarContract.Calendars.ACCOUNT_NAME, localAccountName)
-        values.put(CalendarContract.Calendars.ACCOUNT_TYPE, CalendarContract.ACCOUNT_TYPE_LOCAL)
-        values.put(CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL, CalendarContract.Calendars.CAL_ACCESS_OWNER)
-        values.put(CalendarContract.Calendars.CALENDAR_COLOR, Color.parseColor((calendarColor
-                ?: "0xFFFF0000").replace("0x", "#"))) // Red colour as a default
-        values.put(CalendarContract.Calendars.OWNER_ACCOUNT, localAccountName)
-        values.put(CalendarContract.Calendars.CALENDAR_TIME_ZONE, java.util.Calendar.getInstance().timeZone.id)
-        values.put(CalendarContract.Calendars.SYNC_EVENTS, 1)
-        //values.put(CalendarContract.Calendars.VISIBLE, 1)
-        //values.put(CalendarContract.Calendars.CAN_ORGANIZER_RESPOND, 0)
+                .appendQueryParameter(CALLER_IS_SYNCADAPTER, "true")
+                .appendQueryParameter(CalendarContract.Calendars.ACCOUNT_NAME, localAccountName)
+                .appendQueryParameter(CalendarContract.Calendars.ACCOUNT_TYPE, CalendarContract.ACCOUNT_TYPE_LOCAL)
+                .build()
+
+        val values = buildCalendarValue(calendarName, localAccountName, Color.parseColor((calendarColor
+                ?: "0xFFFF0000").replace("0x", "#")), visible)
 
         val result = contentResolver?.insert(uri, values)
         // Get the calendar ID that is the last element in the Uri
         val calendarId = java.lang.Long.parseLong(result?.lastPathSegment!!)
 
         finishWithSuccess(calendarId.toString(), pendingChannelResult)
+    }
+
+    fun updateCalendar(calendarId: String, visible: Boolean = true, pendingChannelResult: MethodChannel.Result) {
+        val calendar = retrieveCalendar(calendarId, pendingChannelResult, true)
+        if (calendar == null) {
+            finishWithError(NOT_FOUND, "Couldn't retrieve the Calendar with ID $calendarId", pendingChannelResult)
+            return
+        }
+
+        val contentResolver: ContentResolver? = _context?.contentResolver
+
+        var uri = CalendarContract.Calendars.CONTENT_URI
+        uri = uri.buildUpon()
+                .appendQueryParameter(CALLER_IS_SYNCADAPTER, "true")
+                .appendQueryParameter(CalendarContract.Calendars.ACCOUNT_NAME, calendar.accountName)
+                .appendQueryParameter(CalendarContract.Calendars.ACCOUNT_TYPE, CalendarContract.ACCOUNT_TYPE_LOCAL)
+                .appendEncodedPath(calendar.id)
+                .build()
+        val values = buildCalendarValue(calendar.name, calendar.accountName, calendar.color, visible)
+        contentResolver?.update(uri, values, null, null)
+
+        finishWithSuccess(true, pendingChannelResult)
+    }
+
+    private fun buildCalendarValue(calendarName: String, localAccountName: String, color: Int, visible: Boolean): ContentValues {
+        val values = ContentValues()
+        values.put(CalendarContract.Calendars.NAME, calendarName)
+        values.put(CalendarContract.Calendars.CALENDAR_DISPLAY_NAME, calendarName)
+        values.put(CalendarContract.Calendars.ACCOUNT_NAME, localAccountName)
+        values.put(CalendarContract.Calendars.ACCOUNT_TYPE, CalendarContract.ACCOUNT_TYPE_LOCAL)
+        values.put(CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL, CalendarContract.Calendars.CAL_ACCESS_OWNER)
+        values.put(CalendarContract.Calendars.CALENDAR_COLOR, color) // Red colour as a default
+        values.put(CalendarContract.Calendars.OWNER_ACCOUNT, localAccountName)
+        values.put(CalendarContract.Calendars.CALENDAR_TIME_ZONE, java.util.Calendar.getInstance().timeZone.id)
+        values.put(CalendarContract.Calendars.SYNC_EVENTS, 1)
+        values.put(CalendarContract.Calendars.VISIBLE, if (visible) 1 else 0)
+        return values
     }
 
     fun retrieveEvents(calendarId: String, startDate: Long?, endDate: Long?, eventIds: List<String>, pendingChannelResult: MethodChannel.Result) {
@@ -379,8 +406,7 @@ class CalendarDelegate : PluginRegistry.RequestPermissionsResultListener {
                     insertReminders(event.reminders, eventId, contentResolver!!)
                 }
             }
-            job.invokeOnCompletion {
-                cause ->
+            job.invokeOnCompletion { cause ->
                 if (cause == null) {
                     _registrar!!.activity().runOnUiThread {
                         finishWithSuccess(eventId.toString(), pendingChannelResult)
@@ -396,7 +422,7 @@ class CalendarDelegate : PluginRegistry.RequestPermissionsResultListener {
 
     private fun deleteExistingReminders(contentResolver: ContentResolver?, eventId: Long) {
         val cursor = CalendarContract.Reminders.query(contentResolver, eventId, arrayOf(
-          CalendarContract.Reminders._ID
+                CalendarContract.Reminders._ID
         ))
         while (cursor != null && cursor.moveToNext()) {
             var reminderUri: Uri? = null
@@ -498,13 +524,13 @@ class CalendarDelegate : PluginRegistry.RequestPermissionsResultListener {
                 put(CalendarContract.Attendees.ATTENDEE_NAME, it.name)
                 put(CalendarContract.Attendees.ATTENDEE_EMAIL, it.emailAddress)
                 put(
-                  CalendarContract.Attendees.ATTENDEE_RELATIONSHIP,
-                  CalendarContract.Attendees.RELATIONSHIP_ATTENDEE
+                        CalendarContract.Attendees.ATTENDEE_RELATIONSHIP,
+                        CalendarContract.Attendees.RELATIONSHIP_ATTENDEE
                 )
                 put(CalendarContract.Attendees.ATTENDEE_TYPE, it.role)
                 put(
-                  CalendarContract.Attendees.ATTENDEE_STATUS,
-                  CalendarContract.Attendees.ATTENDEE_STATUS_INVITED
+                        CalendarContract.Attendees.ATTENDEE_STATUS,
+                        CalendarContract.Attendees.ATTENDEE_STATUS_INVITED
                 )
                 put(CalendarContract.Attendees.EVENT_ID, eventId)
             }
@@ -766,11 +792,11 @@ class CalendarDelegate : PluginRegistry.RequestPermissionsResultListener {
         }
 
         return Attendee(
-          cursor.getString(ATTENDEE_EMAIL_INDEX),
-          cursor.getString(ATTENDEE_NAME_INDEX),
-          cursor.getInt(ATTENDEE_TYPE_INDEX),
-          cursor.getInt(ATTENDEE_STATUS_INDEX),
-          cursor.getInt(ATTENDEE_RELATIONSHIP_INDEX) == CalendarContract.Attendees.RELATIONSHIP_ORGANIZER)
+                cursor.getString(ATTENDEE_EMAIL_INDEX),
+                cursor.getString(ATTENDEE_NAME_INDEX),
+                cursor.getInt(ATTENDEE_TYPE_INDEX),
+                cursor.getInt(ATTENDEE_STATUS_INDEX),
+                cursor.getInt(ATTENDEE_RELATIONSHIP_INDEX) == CalendarContract.Attendees.RELATIONSHIP_ORGANIZER)
     }
 
     private fun parseReminderRow(cursor: Cursor?): Reminder? {
@@ -872,7 +898,7 @@ class CalendarDelegate : PluginRegistry.RequestPermissionsResultListener {
         }
 
         if (recurrenceRule.recurrenceFrequency == RecurrenceFrequency.WEEKLY ||
-            recurrenceRule.weekOfMonth != null && (recurrenceRule.recurrenceFrequency == RecurrenceFrequency.MONTHLY || recurrenceRule.recurrenceFrequency == RecurrenceFrequency.YEARLY)) {
+                recurrenceRule.weekOfMonth != null && (recurrenceRule.recurrenceFrequency == RecurrenceFrequency.MONTHLY || recurrenceRule.recurrenceFrequency == RecurrenceFrequency.YEARLY)) {
             rr.byDayPart = buildByDayPart(recurrenceRule)
         }
 

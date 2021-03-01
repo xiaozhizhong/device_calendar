@@ -9,6 +9,7 @@ class ChannelConstants {
   static const String methodNameDeleteEventInstance = 'deleteEventInstance';
   static const String methodNameCreateOrUpdateEvent = 'createOrUpdateEvent';
   static const String methodNameCreateCalendar = 'createCalendar';
+  static const String methodNameUpdateCalendar = 'updateCalendar';
 
   static const String parameterNameCalendarId = 'calendarId';
   static const String parameterNameStartDate = 'startDate';
@@ -19,6 +20,7 @@ class ChannelConstants {
   static const String parameterNameEventEndDate = 'eventEndDate';
   static const String parameterNameFollowingInstances = 'followingInstances';
   static const String parameterNameCalendarName = 'calendarName';
+  static const String parameterNameCalendarEnable = 'calendarEnable';
   static const String parameterNameCalendarColor = 'calendarColor';
   static const String parameterNameLocalAccountName = 'localAccountName';
 }

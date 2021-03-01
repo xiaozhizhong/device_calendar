@@ -23,10 +23,12 @@ class DeviceCalendarPlugin() : MethodCallHandler {
     private val DELETE_EVENT_INSTANCE_METHOD = "deleteEventInstance"
     private val CREATE_OR_UPDATE_EVENT_METHOD = "createOrUpdateEvent"
     private val CREATE_CALENDAR_METHOD = "createCalendar"
+    private val UPDATE_CALENDAR_METHOD = "updateCalendar"
 
     // Method arguments
     private val CALENDAR_ID_ARGUMENT = "calendarId"
     private val CALENDAR_NAME_ARGUMENT = "calendarName"
+    private val CALENDAR_VISIBLE_ARGUMENT = "calendarEnable"
     private val START_DATE_ARGUMENT = "startDate"
     private val END_DATE_ARGUMENT = "endDate"
     private val EVENT_IDS_ARGUMENT = "eventIds"
@@ -127,8 +129,15 @@ class DeviceCalendarPlugin() : MethodCallHandler {
                 val calendarName = call.argument<String>(CALENDAR_NAME_ARGUMENT)
                 val calendarColor = call.argument<String>(CALENDAR_COLOR_ARGUMENT)
                 val localAccountName = call.argument<String>(LOCAL_ACCOUNT_NAME_ARGUMENT)
+                val calendarVisible = call.argument<Boolean>(CALENDAR_VISIBLE_ARGUMENT)
 
-                _calendarDelegate.createCalendar(calendarName!!, calendarColor, localAccountName!!, result)
+                _calendarDelegate.createCalendar(calendarName!!, calendarColor, localAccountName!!, calendarVisible!!, result)
+            }
+            UPDATE_CALENDAR_METHOD -> {
+                val calendarId = call.argument<String>(CALENDAR_ID_ARGUMENT)
+                val calendarVisible = call.argument<Boolean>(CALENDAR_VISIBLE_ARGUMENT)
+
+                _calendarDelegate.updateCalendar(calendarId!!, calendarVisible!!, result)
             }
             else -> {
                 result.notImplemented()
