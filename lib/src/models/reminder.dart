@@ -15,3 +15,9 @@ class Reminder {
     return <String, dynamic>{'minutes': minutes};
   }
 }
+
+class ReminderOfEvent {
+  ReminderOfEvent({@required this.eventId, @required this.minutes});
+  final int minutes;
+  final String eventId;
+}

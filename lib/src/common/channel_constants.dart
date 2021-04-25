@@ -10,6 +10,8 @@ class ChannelConstants {
   static const String methodNameCreateOrUpdateEvent = 'createOrUpdateEvent';
   static const String methodNameCreateCalendar = 'createCalendar';
   static const String methodNameUpdateCalendar = 'updateCalendar';
+  static const String methodNameEnableReminder = 'enableReminder';
+  static const String methodNameDisableReminder = 'disableReminder';
 
   static const String parameterNameCalendarId = 'calendarId';
   static const String parameterNameStartDate = 'startDate';
@@ -23,4 +25,6 @@ class ChannelConstants {
   static const String parameterNameCalendarEnable = 'calendarEnable';
   static const String parameterNameCalendarColor = 'calendarColor';
   static const String parameterNameLocalAccountName = 'localAccountName';
+  static const String parameterNameReminderOfEvents = 'reminderOfEvents';
+  static const String parameterMinutes = 'minutes';
 }

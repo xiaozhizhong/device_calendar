@@ -89,8 +89,8 @@ public class SwiftDeviceCalendarPlugin: NSObject, FlutterPlugin {
     let createCalendarMethod = "createCalendar"
     let deleteEventMethod = "deleteEvent"
     let deleteEventInstanceMethod = "deleteEventInstance"
-    let enableRemindersMethod = "enableRemindersMethod"
-    let disableRemindersMethod = "disableRemindersMethod"
+    let enableRemindersMethod = "enableReminder"
+    let disableRemindersMethod = "disableReminder"
     let calendarIdArgument = "calendarId"
     let startDateArgument = "startDate"
     let endDateArgument = "endDate"
@@ -122,7 +122,7 @@ public class SwiftDeviceCalendarPlugin: NSObject, FlutterPlugin {
     let calendarNameArgument = "calendarName"
     let calendarColorArgument = "calendarColor"
     let availabilityArgument = "availability"
-    let remindersIdAndTimeArgument = "remindersIdAndTime"
+    let reminderOfEventsArgument = "reminderOfEvents"
     let validFrequencyTypes = [EKRecurrenceFrequency.daily, EKRecurrenceFrequency.weekly, EKRecurrenceFrequency.monthly, EKRecurrenceFrequency.yearly]
     
     public static func register(with registrar: FlutterPluginRegistrar) {
@@ -555,11 +555,11 @@ public class SwiftDeviceCalendarPlugin: NSObject, FlutterPlugin {
         return reminders
     }
     
-    private func createReminders(_ argument: Dictionary<String, AnyObject>?) -> [EKAlarm]?{
+    private func createReminders(arg argument: Dictionary<String, AnyObject>?) -> [EKAlarm]?{
         if argument == nil {
             return nil
         }
-        let minutes = argument[minutesArgument] as! Int
+        let minutes = argument![minutesArgument] as! Int
         let alarm = EKAlarm.init(relativeOffset: 60 * Double(-minutes))
         return [alarm]
     }
@@ -585,33 +585,33 @@ public class SwiftDeviceCalendarPlugin: NSObject, FlutterPlugin {
     
     private func enableReminders(_ call:FlutterMethodCall, _ result:@escaping FlutterResult){
         checkPermissionsThenExecute(permissionsGrantedAction:{
-            let arguments = call.arguments as Dictionary<String,AnyObject>
+            let arguments = call.arguments as! Dictionary<String,AnyObject>
             let calendarId = arguments[calendarIdArgument] as! String
-            let reminders = arguments[remindersIdAndTimeArgument] as? [Dictionary<String,AnyObject>]
+            let reminders = arguments[reminderOfEventsArgument] as? [Dictionary<String,AnyObject>]
             
-            if(reminders == nil ||reminders?.isEmpty){
+            if reminders == nil || reminders!.isEmpty{
                 result(true)
                 return
             }
-        
+            
             let ekCalendar = self.eventStore.calendar(withIdentifier:calendarId)
-            if(ekCalendar == nil){
+            if ekCalendar == nil{
                 self.finishWithCalendarNotFoundError(result:result,calendarId:calendarId)
                 return
             }
             if !(ekCalendar!.allowsContentModifications){
-                self.finishWithCalendarReadOnlyError(result:result,calendarId,calendarId)
-            }
-            
-            for reminder in reminders{
-                let ekEvent = self.eventStore.event(withIdentifier: reminder[eventIdArgument]!)
-                if(ekEvent != nil) {
-                    ekEvents.alarms = createReminders(reminder)
-                    self.eventStore.save(ekEvent,span: .futureEvents,commit:false)
-                }
+                self.finishWithCalendarReadOnlyError(result:result,calendarId:calendarId)
             }
             
             do {
+                for reminder in reminders!{
+                    let ekEvent = self.eventStore.event(withIdentifier: reminder[eventIdArgument]! as! String)
+                    if(ekEvent != nil) {
+                        ekEvent!.alarms = createReminders(arg:reminder)
+                        try self.eventStore.save(ekEvent!,span: .futureEvents,commit:false)
+                    }
+                }
+                
                 try self.eventStore.commit()
                 result(true)
             } catch {
@@ -624,41 +624,46 @@ public class SwiftDeviceCalendarPlugin: NSObject, FlutterPlugin {
     
     private func disableReminders(_ call:FlutterMethodCall, _ result:@escaping FlutterResult){
         checkPermissionsThenExecute(permissionsGrantedAction:{
-            let arguments = call.arguments as Dictionary<String,AnyObject>
+            let arguments = call.arguments as! Dictionary<String,AnyObject>
             let calendarId = arguments[calendarIdArgument] as! String
-            let startDateNumber = arguments[eventStartDateArgument] as? NSNumber
-            let ekCalendar = self.eventStore.calendar(withIdentifier:calendarId)
-            if(ekCalendar == nil){
-                self.finishWithCalendarNotFoundError(result:result,calendarId:calendarId)
+            let startDateNumber = arguments[startDateArgument] as? NSNumber
+            
+            let ekCalendar = self.eventStore.calendar(withIdentifier: calendarId)
+            print(ekCalendar == nil)
+            if ekCalendar == nil {
+                self.finishWithCalendarNotFoundError(result: result, calendarId: calendarId)
                 return
             }
+            
             if !(ekCalendar!.allowsContentModifications){
-                self.finishWithCalendarReadOnlyError(result:result,calendarId,calendarId)
+                self.finishWithCalendarReadOnlyError(result:result,calendarId:calendarId)
             }
             
-            guard startDateNumber!=nil else{
-                self.encodeJsonAndFinish
+            guard startDateNumber != nil else{
+                result(false)
+                return
             }
             
             let startDate = Date (timeIntervalSince1970: startDateNumber!.doubleValue / 1000.0)
-            let predicate = self.eventStore.predicateForEvents(withStart: startDate, calendars: [ekCalendar!])
+            let predicate = self.eventStore.predicateForEvents(withStart: startDate,end:Date.distantFuture,calendars: [ekCalendar!])
             let ekEvents = self.eventStore.events(matching: predicate)
-            if(ekEvents == nil || ekEvents?.isEmpty){
+            if ekEvents.isEmpty {
                 result(true)
                 return
             }
             let events = ekEvents.filter({ (e) -> Bool in
-                e.alarms!=nil
+                e.alarms != nil
             })
-            if(events.isEmpty){
+            if events.isEmpty {
                 result(true)
                 return
             }
-            for event in events{
-                event.alarms = nil
-                self.eventStore.save(event,span: .futureEvents,commit:false)
-            }
             do {
+                for event in events{
+                    event.alarms = nil
+                    try self.eventStore.save(event,span: .futureEvents,commit:false)
+                }
+                
                 try self.eventStore.commit()
                 result(true)
             } catch {
