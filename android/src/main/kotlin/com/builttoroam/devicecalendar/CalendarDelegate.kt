@@ -10,6 +10,8 @@ import android.content.pm.PackageManager
 import android.database.Cursor
 import android.graphics.Color
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.provider.CalendarContract
 import android.provider.CalendarContract.CALLER_IS_SYNCADAPTER
 import android.provider.CalendarContract.Events
@@ -83,6 +85,7 @@ class CalendarDelegate : PluginRegistry.RequestPermissionsResultListener {
     private val CREATE_OR_UPDATE_EVENT_REQUEST_CODE = RETRIEVE_CALENDAR_REQUEST_CODE + 1
     private val DELETE_EVENT_REQUEST_CODE = CREATE_OR_UPDATE_EVENT_REQUEST_CODE + 1
     private val REQUEST_PERMISSIONS_REQUEST_CODE = DELETE_EVENT_REQUEST_CODE + 1
+    private val DELETE_CALENDAR_REQUEST_CODE = REQUEST_PERMISSIONS_REQUEST_CODE + 1
     private val PART_TEMPLATE = ";%s="
     private val BYMONTHDAY_PART = "BYMONTHDAY"
     private val BYMONTH_PART = "BYMONTH"
@@ -93,8 +96,10 @@ class CalendarDelegate : PluginRegistry.RequestPermissionsResultListener {
     private var _context: Context? = null
     private var _gson: Gson? = null
 
-    constructor(activity: Registrar?, context: Context) {
-        _registrar = activity
+    private val uiThreadHandler = Handler(Looper.getMainLooper())
+
+    constructor(registrar: Registrar?, context: Context) {
+        _registrar = registrar
         _context = context
         val gsonBuilder = GsonBuilder()
         gsonBuilder.registerTypeAdapter(RecurrenceFrequency::class.java, RecurrenceFrequencySerializer())
@@ -112,9 +117,9 @@ class CalendarDelegate : PluginRegistry.RequestPermissionsResultListener {
         }
 
         val cachedValues: CalendarMethodsParametersCacheModel = _cachedParametersMap[requestCode]
-                ?: // unlikely scenario where another plugin is potentially using the same request code but it's not one we are tracking so return to
-                // indicate we're not handling the request
-                return false
+          ?: // unlikely scenario where another plugin is potentially using the same request code but it's not one we are tracking so return to
+          // indicate we're not handling the request
+          return false
 
         try {
             if (!permissionGranted) {
@@ -140,6 +145,9 @@ class CalendarDelegate : PluginRegistry.RequestPermissionsResultListener {
                 }
                 REQUEST_PERMISSIONS_REQUEST_CODE -> {
                     finishWithSuccess(permissionGranted, cachedValues.pendingChannelResult)
+                }
+                DELETE_CALENDAR_REQUEST_CODE -> {
+                    deleteCalendar(cachedValues.calendarId,cachedValues.pendingChannelResult)
                 }
             }
 
@@ -236,7 +244,40 @@ class CalendarDelegate : PluginRegistry.RequestPermissionsResultListener {
         return null
     }
 
-    fun createCalendar(calendarName: String, calendarColor: String?, localAccountName: String, visible: Boolean = true, pendingChannelResult: MethodChannel.Result) {
+    fun deleteCalendar(calendarId: String, pendingChannelResult: MethodChannel.Result, isInternalCall: Boolean = false): Calendar? {
+        if (isInternalCall || arePermissionsGranted()) {
+            val calendarIdNumber = calendarId.toLongOrNull()
+            if (calendarIdNumber == null) {
+                if (!isInternalCall) {
+                    finishWithError(INVALID_ARGUMENT, CALENDAR_ID_INVALID_ARGUMENT_NOT_A_NUMBER_MESSAGE, pendingChannelResult)
+                }
+                return null
+            }
+
+            val contentResolver: ContentResolver? = _context?.contentResolver
+
+            val calendar = retrieveCalendar(calendarId,pendingChannelResult,true);
+            if(calendar != null) {
+                val calenderUriWithId = ContentUris.withAppendedId(CalendarContract.Calendars.CONTENT_URI, calendarIdNumber)
+                val deleteSucceeded = contentResolver?.delete(calenderUriWithId, null, null) ?: 0
+                finishWithSuccess(deleteSucceeded > 0, pendingChannelResult)
+            }else {
+                if (!isInternalCall) {
+                    finishWithError(NOT_FOUND, "The calendar with the ID $calendarId could not be found", pendingChannelResult)
+                }
+            }
+        } else {
+            val parameters = CalendarMethodsParametersCacheModel(
+                    pendingChannelResult = pendingChannelResult,
+                    calendarDelegateMethodCode = DELETE_CALENDAR_REQUEST_CODE,
+                    calendarId = calendarId)
+            requestPermissions(parameters)
+        }
+
+        return null
+    }
+
+    fun createCalendar(calendarName: String, calendarColor: String?, localAccountName: String, pendingChannelResult: MethodChannel.Result) {
         val contentResolver: ContentResolver? = _context?.contentResolver
 
         var uri = CalendarContract.Calendars.CONTENT_URI
@@ -272,7 +313,7 @@ class CalendarDelegate : PluginRegistry.RequestPermissionsResultListener {
                 .appendQueryParameter(CalendarContract.Calendars.ACCOUNT_TYPE, CalendarContract.ACCOUNT_TYPE_LOCAL)
                 .appendEncodedPath(calendar.id)
                 .build()
-        val values = buildCalendarValue(calendar.name, calendar.accountName, calendar.color, visible)
+        val values = buildCalendarValue(calendar.name, calendar.accountName, calendar.color, true)
         contentResolver?.update(uri, values, null, null)
 
         finishWithSuccess(true, pendingChannelResult)
@@ -327,7 +368,7 @@ class CalendarDelegate : PluginRegistry.RequestPermissionsResultListener {
             val events: MutableList<Event> = mutableListOf()
 
             val exceptionHandler = CoroutineExceptionHandler { _, exception ->
-                _registrar!!.activity().runOnUiThread {
+                uiThreadHandler.post {
                     finishWithError(GENERIC_ERROR, exception.message, pendingChannelResult)
                 }
             }
@@ -346,7 +387,7 @@ class CalendarDelegate : PluginRegistry.RequestPermissionsResultListener {
             }.invokeOnCompletion { cause ->
                 eventsCursor?.close()
                 if (cause == null) {
-                    _registrar!!.activity().runOnUiThread {
+                    uiThreadHandler.post {
                         finishWithSuccess(_gson?.toJson(events), pendingChannelResult)
                     }
                 }
@@ -376,7 +417,7 @@ class CalendarDelegate : PluginRegistry.RequestPermissionsResultListener {
             val values = buildEventContentValues(event, calendarId)
 
             val exceptionHandler = CoroutineExceptionHandler { _, exception ->
-                _registrar!!.activity().runOnUiThread {
+                uiThreadHandler.post {
                     finishWithError(GENERIC_ERROR, exception.message, pendingChannelResult)
                 }
             }
@@ -406,9 +447,10 @@ class CalendarDelegate : PluginRegistry.RequestPermissionsResultListener {
                     insertReminders(event.reminders, eventId, contentResolver!!)
                 }
             }
-            job.invokeOnCompletion { cause ->
+            job.invokeOnCompletion {
+                cause ->
                 if (cause == null) {
-                    _registrar!!.activity().runOnUiThread {
+                    uiThreadHandler.post {
                         finishWithSuccess(eventId.toString(), pendingChannelResult)
                     }
                 }
@@ -422,7 +464,7 @@ class CalendarDelegate : PluginRegistry.RequestPermissionsResultListener {
 
     private fun deleteExistingReminders(contentResolver: ContentResolver?, eventId: Long) {
         val cursor = CalendarContract.Reminders.query(contentResolver, eventId, arrayOf(
-                CalendarContract.Reminders._ID
+          CalendarContract.Reminders._ID
         ))
         while (cursor != null && cursor.moveToNext()) {
             var reminderUri: Uri? = null
@@ -524,13 +566,13 @@ class CalendarDelegate : PluginRegistry.RequestPermissionsResultListener {
                 put(CalendarContract.Attendees.ATTENDEE_NAME, it.name)
                 put(CalendarContract.Attendees.ATTENDEE_EMAIL, it.emailAddress)
                 put(
-                        CalendarContract.Attendees.ATTENDEE_RELATIONSHIP,
-                        CalendarContract.Attendees.RELATIONSHIP_ATTENDEE
+                  CalendarContract.Attendees.ATTENDEE_RELATIONSHIP,
+                  CalendarContract.Attendees.RELATIONSHIP_ATTENDEE
                 )
                 put(CalendarContract.Attendees.ATTENDEE_TYPE, it.role)
                 put(
-                        CalendarContract.Attendees.ATTENDEE_STATUS,
-                        CalendarContract.Attendees.ATTENDEE_STATUS_INVITED
+                  CalendarContract.Attendees.ATTENDEE_STATUS,
+                  CalendarContract.Attendees.ATTENDEE_STATUS_INVITED
                 )
                 put(CalendarContract.Attendees.EVENT_ID, eventId)
             }
@@ -644,8 +686,8 @@ class CalendarDelegate : PluginRegistry.RequestPermissionsResultListener {
 
     private fun arePermissionsGranted(): Boolean {
         if (atLeastAPI(23)) {
-            val writeCalendarPermissionGranted = _registrar!!.activity().checkSelfPermission(Manifest.permission.WRITE_CALENDAR) == PackageManager.PERMISSION_GRANTED
-            val readCalendarPermissionGranted = _registrar!!.activity().checkSelfPermission(Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
+            val writeCalendarPermissionGranted = _registrar!!.context().checkSelfPermission(Manifest.permission.WRITE_CALENDAR) == PackageManager.PERMISSION_GRANTED
+            val readCalendarPermissionGranted = _registrar!!.context().checkSelfPermission(Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
             return writeCalendarPermissionGranted && readCalendarPermissionGranted
         }
 
@@ -792,11 +834,11 @@ class CalendarDelegate : PluginRegistry.RequestPermissionsResultListener {
         }
 
         return Attendee(
-                cursor.getString(ATTENDEE_EMAIL_INDEX),
-                cursor.getString(ATTENDEE_NAME_INDEX),
-                cursor.getInt(ATTENDEE_TYPE_INDEX),
-                cursor.getInt(ATTENDEE_STATUS_INDEX),
-                cursor.getInt(ATTENDEE_RELATIONSHIP_INDEX) == CalendarContract.Attendees.RELATIONSHIP_ORGANIZER)
+          cursor.getString(ATTENDEE_EMAIL_INDEX),
+          cursor.getString(ATTENDEE_NAME_INDEX),
+          cursor.getInt(ATTENDEE_TYPE_INDEX),
+          cursor.getInt(ATTENDEE_STATUS_INDEX),
+          cursor.getInt(ATTENDEE_RELATIONSHIP_INDEX) == CalendarContract.Attendees.RELATIONSHIP_ORGANIZER)
     }
 
     private fun parseReminderRow(cursor: Cursor?): Reminder? {
@@ -898,7 +940,7 @@ class CalendarDelegate : PluginRegistry.RequestPermissionsResultListener {
         }
 
         if (recurrenceRule.recurrenceFrequency == RecurrenceFrequency.WEEKLY ||
-                recurrenceRule.weekOfMonth != null && (recurrenceRule.recurrenceFrequency == RecurrenceFrequency.MONTHLY || recurrenceRule.recurrenceFrequency == RecurrenceFrequency.YEARLY)) {
+            recurrenceRule.weekOfMonth != null && (recurrenceRule.recurrenceFrequency == RecurrenceFrequency.MONTHLY || recurrenceRule.recurrenceFrequency == RecurrenceFrequency.YEARLY)) {
             rr.byDayPart = buildByDayPart(recurrenceRule)
         }
 

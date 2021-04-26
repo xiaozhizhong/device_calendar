@@ -10,7 +10,7 @@ import 'calendar_event.dart';
 class CalendarEventsPage extends StatefulWidget {
   final Calendar _calendar;
 
-  CalendarEventsPage(this._calendar, {Key key}) : super(key: key);
+  CalendarEventsPage(this._calendar, {Key? key}) : super(key: key);
 
   @override
   _CalendarEventsPageState createState() {
@@ -22,8 +22,8 @@ class _CalendarEventsPageState extends State<CalendarEventsPage> {
   final Calendar _calendar;
   final GlobalKey<ScaffoldState> _scaffoldstate = GlobalKey<ScaffoldState>();
 
-  DeviceCalendarPlugin _deviceCalendarPlugin;
-  List<Event> _calendarEvents;
+  late DeviceCalendarPlugin _deviceCalendarPlugin;
+  List<Event> _calendarEvents = [];
   bool _isLoading = true;
 
   _CalendarEventsPageState(this._calendar) {
@@ -40,12 +40,14 @@ class _CalendarEventsPageState extends State<CalendarEventsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
         key: _scaffoldstate,
-        appBar: AppBar(title: Text('${_calendar.name} events')),
-        body: ((_calendarEvents?.isNotEmpty ?? false) || _isLoading)
+        appBar: AppBar(title: Text('${_calendar.name} events'),actions: [
+          _getDeleteButton()
+        ],),
+        body: (_calendarEvents.isNotEmpty || _isLoading)
             ? Stack(
                 children: [
                   ListView.builder(
-                    itemCount: _calendarEvents?.length ?? 0,
+                    itemCount: _calendarEvents.length,
                     itemBuilder: (BuildContext context, int index) {
                       return EventItem(
                           _calendarEvents[index],
@@ -53,7 +55,7 @@ class _CalendarEventsPageState extends State<CalendarEventsPage> {
                           _onLoading,
                           _onDeletedFinished,
                           _onTapped,
-                          _calendar.isReadOnly);
+                          _calendar.isReadOnly != null && _calendar.isReadOnly as bool);
                     },
                   ),
                   if (_isLoading)
@@ -66,8 +68,8 @@ class _CalendarEventsPageState extends State<CalendarEventsPage> {
         floatingActionButton: _getAddEventButton(context));
   }
 
-  Widget _getAddEventButton(BuildContext context) {
-    if (!_calendar.isReadOnly) {
+  Widget? _getAddEventButton(BuildContext context) {
+    if (_calendar.isReadOnly == false || _calendar.isReadOnly == null) {
       return FloatingActionButton(
         key: Key('addEventButton'),
         onPressed: () async {
@@ -96,7 +98,8 @@ class _CalendarEventsPageState extends State<CalendarEventsPage> {
     if (deleteSucceeded) {
       await _retrieveCalendarEvents();
     } else {
-      _scaffoldstate.currentState.showSnackBar(SnackBar(
+      
+      _scaffoldstate.currentState!.showSnackBar(SnackBar(
         content: Text('Oops, we ran into an issue deleting the event'),
         backgroundColor: Colors.red,
         duration: Duration(seconds: 5),
@@ -133,8 +136,54 @@ class _CalendarEventsPageState extends State<CalendarEventsPage> {
         _calendar.id,
         RetrieveEventsParams(startDate: startDate, endDate: endDate));
     setState(() {
-      _calendarEvents = calendarEventsResult?.data;
+      _calendarEvents = calendarEventsResult.data as List<Event>;
       _isLoading = false;
     });
   }
+
+  Widget _getDeleteButton() {
+    return IconButton(
+        icon: Icon(Icons.delete),
+        onPressed: () async {
+          await _showDeleteDialog();
+        });
+  }
+
+  Future<void> _showDeleteDialog() async {
+    return showDialog<void>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Warning'),
+          content: SingleChildScrollView(
+            child: ListBody(
+              children: <Widget>[
+                Text('This will delete this calendar'),
+                Text('Are you sure?'),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () async {
+                var returnValue = await _deviceCalendarPlugin.deleteCalendar(_calendar.id!);
+                print('returnValue: ${returnValue.data}, ${returnValue.errors}');
+                Navigator.of(context).pop();
+                Navigator.of(context).pop();
+              },
+              child: Text('Delete!'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text('Cancel'),
+            ),
+          ],
+        );
+      },
+    );
+  }
 }
+
+

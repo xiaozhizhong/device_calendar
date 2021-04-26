@@ -12,6 +12,7 @@ class ChannelConstants {
   static const String methodNameUpdateCalendar = 'updateCalendar';
   static const String methodNameEnableReminder = 'enableReminder';
   static const String methodNameDisableReminder = 'disableReminder';
+  static const String methodNameDeleteCalendar = 'deleteCalendar';
 
   static const String parameterNameCalendarId = 'calendarId';
   static const String parameterNameStartDate = 'startDate';
