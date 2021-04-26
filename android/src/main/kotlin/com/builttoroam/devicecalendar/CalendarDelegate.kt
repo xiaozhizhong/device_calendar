@@ -288,7 +288,7 @@ class CalendarDelegate : PluginRegistry.RequestPermissionsResultListener {
                 .build()
 
         val values = buildCalendarValue(calendarName, localAccountName, Color.parseColor((calendarColor
-                ?: "0xFFFF0000").replace("0x", "#")), visible)
+                ?: "0xFFFF0000").replace("0x", "#")), true)
 
         val result = contentResolver?.insert(uri, values)
         // Get the calendar ID that is the last element in the Uri
@@ -313,7 +313,7 @@ class CalendarDelegate : PluginRegistry.RequestPermissionsResultListener {
                 .appendQueryParameter(CalendarContract.Calendars.ACCOUNT_TYPE, CalendarContract.ACCOUNT_TYPE_LOCAL)
                 .appendEncodedPath(calendar.id)
                 .build()
-        val values = buildCalendarValue(calendar.name, calendar.accountName, calendar.color, true)
+        val values = buildCalendarValue(calendar.name, calendar.accountName, calendar.color, visible)
         contentResolver?.update(uri, values, null, null)
 
         finishWithSuccess(true, pendingChannelResult)
