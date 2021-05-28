@@ -180,17 +180,32 @@ public class SwiftDeviceCalendarPlugin: NSObject, FlutterPlugin {
                 calendar.cgColor = UIColor(red: 255, green: 0, blue: 0, alpha: 0).cgColor // Red colour as a default
             }
             
-            let localSources = eventStore.sources.filter { $0.sourceType == .local }
+            if eventStore.sources.count == 0 { // reproducible after Reset Content and Settings
+                calendar.source = EKSource()
+            }
+            else if eventStore.defaultCalendarForNewEvents != nil{
+                calendar.source = eventStore.defaultCalendarForNewEvents!.source
+            }
             
-            if (!localSources.isEmpty) {
-                calendar.source = localSources.first
-                
+            if calendar.source != nil {
                 try eventStore.saveCalendar(calendar, commit: true)
                 result(calendar.calendarIdentifier)
             }
             else {
                 result(FlutterError(code: self.genericError, message: "Local calendar was not found.", details: nil))
             }
+//
+//            let localSources = eventStore.sources.filter { $0.sourceType == .local }
+//
+//            if (!localSources.isEmpty) {
+//                calendar.source = localSources.first
+//
+//                try eventStore.saveCalendar(calendar, commit: true)
+//                result(calendar.calendarIdentifier)
+//            }
+//            else {
+//                result(FlutterError(code: self.genericError, message: "Local calendar was not found.", details: nil))
+//            }
         }
         catch {
             eventStore.reset()
